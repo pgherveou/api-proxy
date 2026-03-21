@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>api-proxy</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2d3140;
+    --border-focus: #444b5c;
+    --text: #e1e4e8;
+    --text-dim: #6b7280;
+    --green: #238636;
+    --green-bright: #7ee787;
+    --green-glow: rgba(126, 231, 135, 0.08);
+    --red: #da3633;
+    --red-dim: rgba(218, 54, 51, 0.15);
+    --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    --sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 1.5rem;
+  }
+
+  /* --- Header --- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  header h1 {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-dim);
+  }
+
+  header h1 span { color: var(--green-bright); }
+
+  /* --- Status bar / Connection --- */
+  .conn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+
+  .dot.on {
+    background: var(--green-bright);
+    box-shadow: 0 0 6px var(--green-bright);
+  }
+
+  .conn input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    outline: none;
+    min-width: 0;
+  }
+
+  .conn input::placeholder { color: var(--text-dim); }
+
+  .conn-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+
+  /* --- Buttons --- */
+  button {
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--surface);
+    color: var(--text-dim);
+  }
+
+  button:hover { border-color: var(--border-focus); color: var(--text); }
+
+  button.primary {
+    background: var(--green);
+    border-color: var(--green);
+    color: #fff;
+  }
+
+  button.primary:hover { opacity: 0.85; }
+
+  button:disabled { opacity: 0.4; cursor: default; }
+
+  /* --- Layout --- */
+  .panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  @media (max-width: 800px) {
+    .panels { grid-template-columns: 1fr; }
+  }
+
+  /* --- Panel --- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .panel-head .tag {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    background: var(--green-glow);
+    color: var(--green-bright);
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .panel-body { padding: 0.85rem; display: flex; flex-direction: column; gap: 0.6rem; }
+
+  /* --- Inputs / Controls --- */
+  .row { display: flex; gap: 0.4rem; align-items: stretch; }
+
+  input, select, textarea {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 0.45rem 0.6rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input:focus, select:focus, textarea:focus { border-color: var(--border-focus); }
+
+  select { cursor: pointer; }
+
+  textarea {
+    resize: vertical;
+    min-height: 3.5rem;
+    line-height: 1.5;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 0.35rem; }
+  .field > label { font-size: 0.72rem; color: var(--text-dim); padding-left: 0.1rem; }
+
+  /* --- Output --- */
+  .output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.6rem 0.75rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow-y: auto;
+    min-height: 80px;
+    flex: 1;
+  }
+
+  .output.has-data { color: var(--text); }
+  .output.error { color: var(--red); border-color: var(--red-dim); }
+
+  /* --- Scrollbar --- */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* --- Spinner --- */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--green-bright);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 0.3rem;
+  }
+
+  /* --- JSON syntax --- */
+  .json-key { color: #79c0ff; }
+  .json-str { color: #a5d6ff; }
+  .json-num { color: #d2a8ff; }
+  .json-bool { color: #ff7b72; }
+  .json-null { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>/</span>api-proxy</h1>
+</header>
+
+<div class="conn">
+  <div class="dot" id="dot"></div>
+  <input type="text" id="token-input" spellcheck="false" autocomplete="off">
+  <div class="conn-actions">
+    <button id="hint-btn" onclick="copyHint(this)" style="display:none; font-family: var(--mono); font-size: 0.7rem;"></button>
+    <button class="primary" onclick="verifyToken()">Connect</button>
+    <button onclick="disconnect()">Clear</button>
+  </div>
+</div>
+
+<div class="panels">
+  <!-- GitHub panel -->
+  <div class="panel">
+    <div class="panel-head">GitHub API <span class="tag">/gh</span></div>
+    <div class="panel-body">
+      <div class="row">
+        <select id="gh-method" style="width:5.5rem" onchange="toggleGhBody()">
+          <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+        </select>
+        <input type="text" id="gh-path" value="user" style="flex:1">
+        <button class="primary" onclick="sendGh()">Send</button>
+      </div>
+      <textarea id="gh-body" placeholder='{"query": "..."}' style="display:none"></textarea>
+      <div class="output" id="gh-out">Response will appear here</div>
+    </div>
+  </div>
+
+  <!-- Claude panel -->
+  <div class="panel">
+    <div class="panel-head">Claude <span class="tag">/claude</span></div>
+    <div class="panel-body">
+      <div class="row">
+        <select id="claude-model" style="width:6.5rem">
+          <option value="">default</option>
+          <option value="haiku">haiku</option>
+          <option value="sonnet">sonnet</option>
+          <option value="opus">opus</option>
+        </select>
+        <div style="flex:1"></div>
+        <button class="primary" onclick="sendClaude()">Send</button>
+      </div>
+      <textarea id="claude-prompt" rows="3">Say hello in 3 words</textarea>
+      <div class="output" id="claude-out">Response will appear here</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = location.origin;
+const tokenInput = document.getElementById('token-input');
+const dot = document.getElementById('dot');
+
+const isMac = navigator.platform.toUpperCase().includes('MAC');
+const copyCmd = isMac ? 'api-proxy get-token | pbcopy' : 'api-proxy get-token | xclip -sel clip';
+tokenInput.placeholder = 'paste token';
+const hintBtn = document.getElementById('hint-btn');
+hintBtn.textContent = copyCmd;
+
+function updateHint() {
+  hintBtn.style.display = getToken() ? 'none' : '';
+}
+
+function copyHint(btn) {
+  navigator.clipboard.writeText(copyCmd);
+  btn.textContent = 'copied!';
+  setTimeout(() => { btn.textContent = copyCmd; }, 1500);
+}
+
+// Load token from localStorage
+(function init() {
+  const saved = localStorage.getItem('api-proxy-token');
+  if (saved) {
+    tokenInput.value = saved;
+    verifyToken();
+  }
+  updateHint();
+})();
+
+tokenInput.addEventListener('input', updateHint);
+
+function getToken() { return tokenInput.value.trim(); }
+
+function headers() {
+  const h = { 'Content-Type': 'application/json' };
+  const t = getToken();
+  if (t) h['Authorization'] = 'Bearer ' + t;
+  return h;
+}
+
+async function verifyToken() {
+  const t = getToken();
+  if (!t) return;
+  localStorage.setItem('api-proxy-token', t);
+  try {
+    const r = await fetch(BASE + '/gh/user', { headers: headers() });
+    dot.classList.toggle('on', r.ok);
+  } catch {
+    dot.classList.remove('on');
+  }
+}
+
+function disconnect() {
+  localStorage.removeItem('api-proxy-token');
+  tokenInput.value = '';
+  dot.classList.remove('on');
+  updateHint();
+}
+
+function toggleGhBody() {
+  const m = document.getElementById('gh-method').value;
+  document.getElementById('gh-body').style.display = (m === 'POST' || m === 'PUT') ? '' : 'none';
+}
+
+function setOutput(id, text, isError) {
+  const el = document.getElementById(id);
+  el.classList.toggle('has-data', !!text);
+  el.classList.toggle('error', !!isError);
+  if (!isError) {
+    try {
+      const parsed = JSON.parse(text);
+      el.innerHTML = syntaxHighlight(JSON.stringify(parsed, null, 2));
+      return;
+    } catch {}
+  }
+  el.textContent = text;
+}
+
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+    function (match) {
+      let cls = 'json-num';
+      if (/^"/.test(match)) {
+        cls = /:$/.test(match) ? 'json-key' : 'json-str';
+      } else if (/true|false/.test(match)) {
+        cls = 'json-bool';
+      } else if (/null/.test(match)) {
+        cls = 'json-null';
+      }
+      return '<span class="' + cls + '">' + match + '</span>';
+    });
+}
+
+function setLoading(id) {
+  const el = document.getElementById(id);
+  el.innerHTML = '<span class="spinner"></span> Loading...';
+  el.classList.remove('has-data', 'error');
+}
+
+async function sendGh() {
+  const method = document.getElementById('gh-method').value;
+  const path = document.getElementById('gh-path').value.trim() || 'user';
+  const body = document.getElementById('gh-body').value.trim();
+
+  setLoading('gh-out');
+  try {
+    const opts = { method, headers: headers() };
+    if ((method === 'POST' || method === 'PUT') && body) opts.body = body;
+    const r = await fetch(BASE + '/gh/' + path, opts);
+    const text = await r.text();
+    setOutput('gh-out', text, !r.ok);
+  } catch (e) {
+    setOutput('gh-out', e.message, true);
+  }
+}
+
+async function sendClaude() {
+  const prompt = document.getElementById('claude-prompt').value.trim();
+  if (!prompt) return;
+  const model = document.getElementById('claude-model').value;
+
+  setLoading('claude-out');
+  try {
+    const payload = { prompt };
+    if (model) payload.model = model;
+    const r = await fetch(BASE + '/claude', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(payload),
+    });
+    const text = await r.text();
+    if (r.ok) {
+      try {
+        const data = JSON.parse(text);
+        setOutput('claude-out', data.response || text, false);
+      } catch {
+        setOutput('claude-out', text, false);
+      }
+    } else {
+      setOutput('claude-out', text, true);
+    }
+  } catch (e) {
+    setOutput('claude-out', e.message, true);
+  }
+}
+
+// Submit on Cmd/Ctrl+Enter in textareas
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    const target = e.target;
+    if (target.id === 'claude-prompt') sendClaude();
+    if (target.id === 'gh-body') sendGh();
+  }
+});
+</script>
+</body>
+</html>

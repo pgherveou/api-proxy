@@ -1,0 +1,12 @@
+[Unit]
+Description=API Proxy for GitHub and Claude CLI
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/api-proxy
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
