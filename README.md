@@ -5,7 +5,7 @@
 ## Features
 
 - **GitHub API passthrough** -- Proxies any GitHub API call through your authenticated `gh` CLI, preserving tokens and permissions
-- **Claude CLI gateway** -- [Anthropic Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages) compatible endpoint with pre-warmed process pools and SSE streaming
+- **Claude CLI gateway** -- [Anthropic Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages) compatible endpoint with pre-warmed process pools and SSE streaming. Requests are read-only (no tools, no file access) with fresh context each time.
 - **Bearer token auth** -- Auto-generated token, stored in config with 0600 permissions
 - **CORS support** -- Configurable origin policy for browser-based clients
 - **Zero credentials in config** -- Delegates auth entirely to `gh` and `claude`, no API keys to manage
