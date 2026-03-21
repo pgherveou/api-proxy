@@ -67,7 +67,8 @@ async fn main() {
 
     let public = Router::new()
         .route("/health", get(|| async { "OK" }))
-        .route("/", get(pages::index));
+        .route("/", get(pages::index))
+        .route("/favicon.ico", get(pages::favicon));
 
     let protected = Router::new()
         .route("/gh/{*path}", any(gh::handler))

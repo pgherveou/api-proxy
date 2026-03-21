@@ -113,6 +113,109 @@ curl -s -X POST http://localhost:19280/gh/graphql \
   -d '{"query": "query { viewer { login name bio } }"}'
 ```
 
+## Web App Integration
+
+Web apps running in the browser can use api-proxy as a local backend for Claude and GitHub API calls. The user must have api-proxy running on their machine.
+
+### 1. Obtain the token
+
+The user copies their token from the terminal and pastes it into your app:
+
+```bash
+# Linux
+api-proxy get-token | xclip -sel clip
+
+# macOS
+api-proxy get-token | pbcopy
+```
+
+Your app should provide a token input field and store it in `localStorage`:
+
+```js
+// Store
+localStorage.setItem('api-proxy-token', userInput);
+
+// Retrieve
+const token = localStorage.getItem('api-proxy-token');
+```
+
+### 2. Make requests
+
+```js
+const API = 'http://localhost:19280';
+const token = localStorage.getItem('api-proxy-token');
+
+// Claude (buffered)
+const res = await fetch(`${API}/claude`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  },
+  body: JSON.stringify({ prompt: 'Hello', model: 'haiku' }),
+});
+const { response } = await res.json();
+```
+
+### 3. Stream Claude responses
+
+```js
+const res = await fetch(`${API}/claude/stream`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  },
+  body: JSON.stringify({ prompt: 'Count to 10', model: 'sonnet' }),
+});
+
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  const chunk = decoder.decode(value);
+  for (const line of chunk.split('\n')) {
+    if (!line.startsWith('data: ')) continue;
+    const data = line.slice(6);
+    if (data === '[DONE]') return;
+    process.stdout.write(data); // or append to DOM
+  }
+}
+```
+
+### 4. GitHub API
+
+```js
+// REST
+const user = await fetch(`${API}/gh/user`, {
+  headers: { 'Authorization': `Bearer ${token}` },
+}).then(r => r.json());
+
+// GraphQL
+const result = await fetch(`${API}/gh/graphql`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+    query: `query { viewer { login name } }`,
+  }),
+}).then(r => r.json());
+```
+
+### CORS
+
+By default, api-proxy allows requests from any origin. To restrict to your app's domain:
+
+```toml
+# ~/.config/api-proxy.toml
+cors_origin = "https://myapp.com"
+```
+
 ## Configuration
 
 api-proxy reads from `~/.config/api-proxy.toml` by default. All fields are optional.

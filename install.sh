@@ -5,8 +5,15 @@ BIN_NAME="api-proxy"
 
 install_linux() {
     local service_dir="$HOME/.config/systemd/user"
-    mkdir -p "$service_dir"
+    local override_dir="$service_dir/$BIN_NAME.service.d"
+    mkdir -p "$service_dir" "$override_dir"
     cp api-proxy.service "$service_dir/$BIN_NAME.service"
+
+    # Capture the user's current PATH so the service can find claude, gh, etc.
+    cat > "$override_dir/path.conf" <<EOF
+[Service]
+Environment="PATH=$PATH"
+EOF
 
     systemctl --user daemon-reload
     systemctl --user enable --now "$BIN_NAME"
@@ -58,13 +65,8 @@ EOF
 
 # Build and install binary
 echo "Building $BIN_NAME (release)..."
-cargo build --release
-BUILT="$(cargo metadata --format-version=1 --no-deps | grep -o '"target_directory":"[^"]*"' | cut -d'"' -f4)/release/$BIN_NAME"
-
-INSTALL_DIR="$HOME/.cargo/bin"
-mkdir -p "$INSTALL_DIR"
-cp "$BUILT" "$INSTALL_DIR/$BIN_NAME"
-echo "Installed to $INSTALL_DIR/$BIN_NAME"
+cargo install --path . --force
+echo "Installed to $(which $BIN_NAME)"
 
 # Install and start service
 OS="$(uname -s)"
