@@ -5,7 +5,7 @@
 ## Features
 
 - **GitHub API passthrough** -- Proxies any GitHub API call through your authenticated `gh` CLI, preserving tokens and permissions
-- **Claude CLI gateway** -- Pre-warmed process pools with buffered and SSE streaming endpoints
+- **Claude CLI gateway** -- [Anthropic Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages) compatible endpoint with pre-warmed process pools and SSE streaming
 - **Bearer token auth** -- Auto-generated token, stored in config with 0600 permissions
 - **CORS support** -- Configurable origin policy for browser-based clients
 - **Zero credentials in config** -- Delegates auth entirely to `gh` and `claude`, no API keys to manage
@@ -68,35 +68,63 @@ curl http://localhost:19280/health
 # OK
 ```
 
-### Claude (buffered)
+### Claude (`POST /claude/v1/messages`)
+
+Implements the [Anthropic Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages) format. Existing Anthropic SDK clients can point at this proxy as a drop-in backend.
 
 ```bash
 TOKEN=$(api-proxy get-token)
-curl -s -X POST http://localhost:19280/claude \
+
+# Buffered
+curl -s -X POST http://localhost:19280/claude/v1/messages \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Say hello in 3 words", "model": "haiku"}'
-# {"response": "Hello, World!"}
+  -d '{"model": "sonnet", "max_tokens": 1024, "messages": [{"role": "user", "content": "Say hello in 3 words"}]}'
+
+# Streaming
+curl -N -X POST http://localhost:19280/claude/v1/messages \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "sonnet", "max_tokens": 1024, "stream": true, "messages": [{"role": "user", "content": "Count to 5"}]}'
 ```
 
-### Claude (SSE streaming)
+#### SDK usage
 
-```bash
-curl -N -X POST http://localhost:19280/claude/stream \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Count to 5", "model": "sonnet"}'
+```python
+from anthropic import Anthropic
+client = Anthropic(base_url="http://localhost:19280/claude", api_key=TOKEN)
+msg = client.messages.create(model="sonnet", max_tokens=1024, messages=[{"role": "user", "content": "Hello"}])
 ```
 
 #### Request fields
 
-| Field | Type | Description |
-|---|---|---|
-| `prompt` | string | Required. The prompt text |
-| `model` | string | Model alias: `haiku`, `sonnet`, `opus` |
-| `effort` | string | Effort level: `low`, `medium`, `high`, `max` |
-| `fallback_model` | string | Auto-fallback when primary model is overloaded |
-| `system_prompt` | string | Custom system prompt for this request |
+| Field | Type | Status | Notes |
+|---|---|---|---|
+| `model` | string | **Required** | `"haiku"`, `"sonnet"`, `"opus"`, or full Anthropic model IDs |
+| `max_tokens` | number | **Required** | Accepted but not enforced (no CLI equivalent) |
+| `messages` | array | **Required** | `[{role, content}]`. Multi-turn is flattened to a single prompt |
+| `system` | string | Optional | Passed to CLI via `--system-prompt` |
+| `stream` | boolean | Optional | `true` for SSE streaming |
+| `temperature` | number | Ignored | No CLI equivalent |
+| `top_p` | number | Ignored | No CLI equivalent |
+| `top_k` | number | Ignored | No CLI equivalent |
+| `stop_sequences` | array | Ignored | No CLI equivalent |
+
+#### Response differences from Anthropic API
+
+| Field | Notes |
+|---|---|
+| `id` | Generated locally as `msg_<counter>`, not a real Anthropic message ID |
+| `usage` | From CLI result message if available, otherwise `0` |
+| `stop_reason` | Always `"end_turn"` on success (no `max_tokens` or `tool_use` detection) |
+| `stop_sequence` | Always `null` |
+
+#### Limitations
+
+- **Single-turn only**: multi-turn messages are flattened into one prompt
+- **No tools**: all requests run read-only with no file access or shell
+- **No images**: image content blocks are not supported
+- **No sampling control**: `temperature`, `top_p`, `top_k`, `max_tokens` accepted but ignored
 
 ### GitHub API
 
@@ -145,45 +173,21 @@ const token = localStorage.getItem('api-proxy-token');
 const API = 'http://localhost:19280';
 const token = localStorage.getItem('api-proxy-token');
 
-// Claude (buffered)
-const res = await fetch(`${API}/claude`, {
+// Claude (uses Anthropic Messages API format)
+const res = await fetch(`${API}/claude/v1/messages`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   },
-  body: JSON.stringify({ prompt: 'Hello', model: 'haiku' }),
+  body: JSON.stringify({
+    model: 'sonnet',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: 'Hello' }],
+  }),
 });
-const { response } = await res.json();
-```
-
-### 3. Stream Claude responses
-
-```js
-const res = await fetch(`${API}/claude/stream`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
-  },
-  body: JSON.stringify({ prompt: 'Count to 10', model: 'sonnet' }),
-});
-
-const reader = res.body.getReader();
-const decoder = new TextDecoder();
-
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-
-  const chunk = decoder.decode(value);
-  for (const line of chunk.split('\n')) {
-    if (!line.startsWith('data: ')) continue;
-    const data = line.slice(6);
-    if (data === '[DONE]') return;
-    process.stdout.write(data); // or append to DOM
-  }
-}
+const { content } = await res.json();
+const text = content[0].text;
 ```
 
 ### 4. GitHub API

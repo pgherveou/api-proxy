@@ -278,7 +278,7 @@
 
   <!-- Claude panel -->
   <div class="panel">
-    <div class="panel-head">Claude <span class="tag">/claude</span></div>
+    <div class="panel-head">Claude <span class="tag">/claude/v1/messages</span></div>
     <div class="panel-body">
       <div class="row">
         <select id="claude-model" style="width:6.5rem">
@@ -427,13 +427,16 @@ async function sendGh() {
 async function sendClaude() {
   const prompt = document.getElementById('claude-prompt').value.trim();
   if (!prompt) return;
-  const model = document.getElementById('claude-model').value;
+  const model = document.getElementById('claude-model').value || 'sonnet';
 
   setLoading('claude-out');
   try {
-    const payload = { prompt };
-    if (model) payload.model = model;
-    const r = await fetch(BASE + '/claude', {
+    const payload = {
+      model,
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }],
+    };
+    const r = await fetch(BASE + '/claude/v1/messages', {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(payload),
@@ -442,7 +445,8 @@ async function sendClaude() {
     if (r.ok) {
       try {
         const data = JSON.parse(text);
-        setOutput('claude-out', data.response || text, false);
+        const content = data.content?.map(b => b.text).join('') || text;
+        setOutput('claude-out', content, false);
       } catch {
         setOutput('claude-out', text, false);
       }

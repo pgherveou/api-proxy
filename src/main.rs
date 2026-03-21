@@ -2,6 +2,7 @@ mod auth;
 mod claude;
 mod config;
 mod gh;
+mod messages;
 mod pages;
 
 use axum::Router;
@@ -72,8 +73,7 @@ async fn main() {
 
     let protected = Router::new()
         .route("/gh/{*path}", any(gh::handler))
-        .route("/claude", post(claude::handler))
-        .route("/claude/stream", post(claude::stream_handler))
+        .route("/claude/v1/messages", post(messages::handler))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::require_auth,
