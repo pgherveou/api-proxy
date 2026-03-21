@@ -114,13 +114,14 @@ fn flatten_messages(messages: &[Message]) -> String {
     }
 
     let mut parts = Vec::new();
-    for msg in messages {
+    let last = messages.len() - 1;
+    for (i, msg) in messages.iter().enumerate() {
         let text = extract_text(msg);
-        match msg.role.as_str() {
-            "assistant" => {
-                parts.push(format!("<previous_response>\n{text}\n</previous_response>"));
-            }
-            _ => parts.push(text),
+        if i == last {
+            parts.push(text);
+        } else {
+            let role = &msg.role;
+            parts.push(format!("<{role}_message>\n{text}\n</{role}_message>"));
         }
     }
     parts.join("\n\n")
