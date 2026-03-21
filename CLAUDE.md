@@ -58,7 +58,14 @@ curl -s -X POST http://localhost:19280/claude \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Say hello in 3 words"}'
 
-# Claude (SSE streaming)
+# Claude (streaming, plain text for terminal)
+curl -N -X POST http://localhost:19280/claude/stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: text/plain" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Count to 5"}'
+
+# Claude (SSE streaming, for programmatic clients)
 curl -N -X POST http://localhost:19280/claude/stream \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \

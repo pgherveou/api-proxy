@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::Json;
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures::stream::Stream;
@@ -411,9 +412,11 @@ pub async fn handler(
     }
 }
 
-/// SSE streaming handler: streams tokens as they arrive
+/// SSE streaming handler: streams tokens as they arrive.
+/// With `Accept: text/plain`, returns raw text (ideal for curl demos).
 pub async fn stream_handler(
     axum::extract::State(pool): axum::extract::State<ClaudePool>,
+    headers: HeaderMap,
     Json(req): Json<ClaudeRequest>,
 ) -> Response {
     let req_id = pool.next_req_id();
@@ -441,10 +444,25 @@ pub async fn stream_handler(
         return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
 
-    let stream = token_stream(proc, req_id, pid);
-    Sse::new(stream)
-        .keep_alive(KeepAlive::default())
-        .into_response()
+    let plain_text = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("text/plain"));
+
+    if plain_text {
+        let stream = text_stream(proc, req_id, pid);
+        let body = Body::from_stream(stream);
+        Response::builder()
+            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(body)
+            .unwrap()
+            .into_response()
+    } else {
+        let stream = token_stream(proc, req_id, pid);
+        Sse::new(stream)
+            .keep_alive(KeepAlive::default())
+            .into_response()
+    }
 }
 
 fn token_stream(
@@ -515,6 +533,11 @@ fn token_stream(
                     if is_error {
                         yield Ok(Event::default().event("error").data(result));
                     } else {
+                        // If no text_delta events were received, emit the result text
+                        if total_len == 0 && !result.is_empty() {
+                            tracing::warn!(req_id, pid, "no stream deltas received, falling back to result text");
+                            yield Ok(Event::default().data(&result));
+                        }
                         yield Ok(Event::default().event("done").data("[DONE]"));
                     }
                     break;
@@ -522,5 +545,84 @@ fn token_stream(
                 StreamMessage::Other => {}
             }
         }
+    }
+}
+
+fn text_stream(
+    mut proc: ClaudeProcess,
+    req_id: u64,
+    pid: u32,
+) -> impl Stream<Item = Result<String, Infallible>> {
+    let start = Instant::now();
+    let mut first_token = true;
+    let mut total_len: usize = 0;
+
+    async_stream::stream! {
+        let mut buf = String::with_capacity(512);
+        loop {
+            let read_fut = proc.next_message(&mut buf);
+            let msg = match tokio::time::timeout(REQUEST_TIMEOUT, read_fut).await {
+                Ok(Ok(msg)) => msg,
+                Ok(Err(e)) => {
+                    tracing::warn!(req_id, pid, "stream read error: {e}");
+                    if total_len == 0 {
+                        yield Ok(format!("Error: {e}"));
+                    }
+                    break;
+                }
+                Err(_) => {
+                    tracing::warn!(req_id, pid, "stream timed out after {}s", REQUEST_TIMEOUT.as_secs());
+                    if total_len == 0 {
+                        yield Ok("Error: request timed out".into());
+                    }
+                    break;
+                }
+            };
+            match msg {
+                StreamMessage::StreamEvent { event } => match event {
+                    StreamEvent::ContentBlockDelta {
+                        delta: Delta::TextDelta { text },
+                    } => {
+                        if first_token {
+                            tracing::debug!(
+                                req_id, pid,
+                                ttfb_ms = start.elapsed().as_millis() as u64,
+                                "first token (text stream)"
+                            );
+                            first_token = false;
+                        }
+                        total_len += text.len();
+                        yield Ok(text);
+                    }
+                    StreamEvent::MessageStop => {
+                        tracing::info!(
+                            req_id, pid,
+                            duration_ms = start.elapsed().as_millis() as u64,
+                            response_len = total_len,
+                            "text stream complete"
+                        );
+                        break;
+                    }
+                    _ => {}
+                },
+                StreamMessage::Result { result, is_error } => {
+                    tracing::info!(
+                        req_id, pid,
+                        duration_ms = start.elapsed().as_millis() as u64,
+                        response_len = total_len,
+                        is_error,
+                        "text stream complete (result)"
+                    );
+                    if is_error {
+                        yield Ok(format!("Error: {result}"));
+                    } else if total_len == 0 && !result.is_empty() {
+                        yield Ok(result);
+                    }
+                    break;
+                }
+                StreamMessage::Other => {}
+            }
+        }
+        yield Ok("\n".into());
     }
 }

@@ -271,7 +271,7 @@
         <input type="text" id="gh-path" value="user" style="flex:1">
         <button class="primary" onclick="sendGh()">Send</button>
       </div>
-      <textarea id="gh-body" placeholder='{"query": "..."}' style="display:none"></textarea>
+      <textarea id="gh-body" placeholder="Request body (for graphql: paste raw query)" style="display:none"></textarea>
       <div class="output" id="gh-out">Response will appear here</div>
     </div>
   </div>
@@ -391,6 +391,10 @@ function syntaxHighlight(json) {
     });
 }
 
+function isJson(str) {
+  try { JSON.parse(str); return true; } catch { return false; }
+}
+
 function setLoading(id) {
   const el = document.getElementById(id);
   el.innerHTML = '<span class="spinner"></span> Loading...';
@@ -405,7 +409,13 @@ async function sendGh() {
   setLoading('gh-out');
   try {
     const opts = { method, headers: headers() };
-    if ((method === 'POST' || method === 'PUT') && body) opts.body = body;
+    if ((method === 'POST' || method === 'PUT') && body) {
+      if (path === 'graphql' && !isJson(body)) {
+        opts.body = JSON.stringify({ query: body });
+      } else {
+        opts.body = body;
+      }
+    }
     const r = await fetch(BASE + '/gh/' + path, opts);
     const text = await r.text();
     setOutput('gh-out', text, !r.ok);
