@@ -41,7 +41,7 @@ pub enum Command {
         origin: String,
     },
     /// Set a regex pattern for origins to block (empty string to disable blocking)
-    SetBlockedOriginPattern {
+    SetBlockedOrigin {
         /// Regex pattern, e.g. "^chrome-extension://" or "" to disable
         pattern: String,
     },

@@ -49,7 +49,7 @@ async fn main() {
             println!("Saved. Restart the service for changes to take effect.");
             return;
         }
-        Some(config::Command::SetBlockedOriginPattern { ref pattern }) => {
+        Some(config::Command::SetBlockedOrigin { ref pattern }) => {
             config.set_blocked_origin_pattern(pattern.clone());
             println!("Saved. Restart the service for changes to take effect.");
             return;
