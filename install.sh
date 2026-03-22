@@ -18,13 +18,16 @@ EOF
     systemctl --user daemon-reload
     systemctl --user enable --now "$BIN_NAME"
     echo "Installed systemd user service. Check status with: systemctl --user status $BIN_NAME"
+    echo "Open in browser: http://localhost:19280/"
+    echo "View logs: journalctl --user -u $BIN_NAME -f"
 }
 
 install_macos() {
     local plist_name="com.github.$BIN_NAME"
     local plist_dir="$HOME/Library/LaunchAgents"
     local plist_path="$plist_dir/$plist_name.plist"
-    local bin_path="$INSTALL_DIR/$BIN_NAME"
+    local bin_path
+    bin_path="$(which "$BIN_NAME")"
 
     mkdir -p "$plist_dir"
     cat > "$plist_path" <<EOF
@@ -51,8 +54,12 @@ install_macos() {
     <string>$HOME/Library/Logs/$BIN_NAME.log</string>
     <key>EnvironmentVariables</key>
     <dict>
+        <key>HOME</key>
+        <string>$HOME</string>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:$HOME/.cargo/bin</string>
+        <string>$PATH</string>
+        <key>CLAUDE_CODE_OAUTH_TOKEN</key>
+        <string>${CLAUDE_CODE_OAUTH_TOKEN:-}</string>
     </dict>
 </dict>
 </plist>
@@ -60,7 +67,10 @@ EOF
 
     launchctl bootout "gui/$(id -u)" "$plist_path" 2>/dev/null || true
     launchctl bootstrap "gui/$(id -u)" "$plist_path"
-    echo "Installed launchd service. Check status with: launchctl print gui/$(id -u)/$plist_name"
+    launchctl kickstart "gui/$(id -u)/$plist_name"
+    echo "Installed and started launchd service. Check status with: launchctl print gui/$(id -u)/$plist_name"
+    echo "Open in browser: http://localhost:19280/"
+    echo "View logs: tail -f ~/Library/Logs/$BIN_NAME.log"
 }
 
 # Build and install binary
