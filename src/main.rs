@@ -1,28 +1,8 @@
-mod auth;
-mod claude;
-mod config;
-mod gh;
-mod messages;
-mod pages;
-
-use axum::Router;
-use axum::routing::{any, get, post};
+use api_proxy::{AppState, build_app};
 use config::Config;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
-#[derive(Clone)]
-pub struct AppState {
-    pub pool: claude::ClaudePool,
-    pub token: String,
-    /// Compiled regex for origins to block; None means no blocking.
-    pub blocked_origin_pattern: Option<regex::Regex>,
-}
-
-impl axum::extract::FromRef<AppState> for claude::ClaudePool {
-    fn from_ref(state: &AppState) -> Self {
-        state.pool.clone()
-    }
-}
+mod config;
 
 #[tokio::main]
 async fn main() {
@@ -90,7 +70,7 @@ async fn main() {
 
     let pool_size = config.claude_pool_size();
     let state = AppState {
-        pool: claude::ClaudePool::new(&[
+        pool: api_proxy::claude::ClaudePool::new(&[
             ("", pool_size),
             ("sonnet", pool_size),
             ("haiku", pool_size),
@@ -100,22 +80,9 @@ async fn main() {
         blocked_origin_pattern,
     };
 
-    let public = Router::new()
-        .route("/health", get(|| async { "OK" }))
-        .route("/", get(pages::index))
-        .route("/favicon.ico", get(pages::favicon));
+    let app = build_app(state, cors);
 
-    let protected = Router::new()
-        .route("/gh/{*path}", any(gh::handler))
-        .route("/claude/v1/messages", post(messages::handler))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            auth::require_auth,
-        ));
-
-    let app = public.merge(protected).with_state(state).layer(cors);
-
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], config.port()));
+    let addr = std::net::SocketAddr::from(([127, 0, 0_u8, 1], config.port()));
     tracing::info!("listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

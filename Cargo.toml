@@ -20,6 +20,8 @@ tracing-subscriber = "0.3"
 regex = "1.12.3"
 
 [dev-dependencies]
+http = "1.4.0"
 reqwest = { version = "0.12", features = ["json"] }
 shellexpand = "3"
 toml = "0.8"
+tower = { version = "0.5.3", features = ["util"] }
