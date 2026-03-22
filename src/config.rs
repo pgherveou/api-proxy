@@ -18,6 +18,9 @@ pub struct Settings {
     /// Number of pre-warmed Claude CLI processes per model
     #[arg(long)]
     pub claude_pool_size: Option<usize>,
+    /// Block browser extension origins (chrome-extension://, moz-extension://, etc.)
+    #[arg(long)]
+    pub block_extension_origins: Option<bool>,
     /// Auth token (auto-generated if missing, read from config file only)
     #[serde(default)]
     #[arg(skip)]
@@ -62,6 +65,9 @@ impl Config {
         if config.settings.claude_pool_size.is_none() {
             config.settings.claude_pool_size = file.claude_pool_size;
         }
+        if config.settings.block_extension_origins.is_none() {
+            config.settings.block_extension_origins = file.block_extension_origins;
+        }
         if config.settings.token.is_none() {
             config.settings.token = file.token;
         }
@@ -100,6 +106,10 @@ impl Config {
         self.settings
             .claude_pool_size
             .unwrap_or(DEFAULT_CLAUDE_POOL_SIZE)
+    }
+
+    pub fn block_extension_origins(&self) -> bool {
+        self.settings.block_extension_origins.unwrap_or(true)
     }
 
     pub fn token(&self) -> &str {

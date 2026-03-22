@@ -5,6 +5,7 @@ mod gh;
 mod messages;
 mod pages;
 
+use auth::is_extension_origin;
 use axum::Router;
 use axum::routing::{any, get, post};
 use config::Config;
@@ -14,6 +15,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 pub struct AppState {
     pub pool: claude::ClaudePool,
     pub token: String,
+    pub block_extension_origins: bool,
 }
 
 impl axum::extract::FromRef<AppState> for claude::ClaudePool {
@@ -45,25 +47,21 @@ async fn main() {
     tracing::info!("auth token loaded (run `api-proxy get-token` to retrieve)");
 
     let cors_origin = config.cors_origin().to_string();
+    let block_ext = config.block_extension_origins();
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             let origin = origin.to_str().unwrap_or("");
             if cors_origin == "*" {
                 return true;
             }
-            // Block browser extension origins
-            if origin.starts_with("chrome-extension://")
-                || origin.starts_with("moz-extension://")
-                || origin.starts_with("safari-web-extension://")
-                || origin.starts_with("extension://")
-            {
+            if block_ext && is_extension_origin(origin) {
                 tracing::warn!("blocked request from extension origin: {origin}");
                 return false;
             }
-            // If no cors_origin configured, allow only same-origin (localhost)
             if cors_origin.is_empty() {
                 return origin.starts_with("http://localhost:")
-                    || origin.starts_with("http://127.0.0.1:");
+                    || origin.starts_with("http://127.0.0.1:")
+                    || origin.ends_with(".github.io");
             }
             origin == cors_origin
         }))
@@ -79,6 +77,7 @@ async fn main() {
             ("opus", pool_size),
         ]),
         token,
+        block_extension_origins: config.block_extension_origins(),
     };
 
     let public = Router::new()
