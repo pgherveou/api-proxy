@@ -10,6 +10,16 @@ pub async fn require_auth(
     req: axum::extract::Request,
     next: Next,
 ) -> Response {
+    // Defense-in-depth: reject requests from browser extension origins server-side,
+    // even though CORS should block them client-side. This protects against cases
+    // where the browser doesn't enforce CORS (e.g. simple requests without preflight).
+    if let Some(origin) = req.headers().get("origin").and_then(|v| v.to_str().ok()) {
+        if is_extension_origin(origin) {
+            tracing::warn!("rejected auth from extension origin: {origin}");
+            return (StatusCode::FORBIDDEN, "forbidden").into_response();
+        }
+    }
+
     let auth = req
         .headers()
         .get("authorization")
@@ -23,13 +33,30 @@ pub async fn require_auth(
         {
             next.run(req).await
         }
-        _ => (
-            StatusCode::UNAUTHORIZED,
-            [("www-authenticate", "Bearer")],
-            "unauthorized",
-        )
-            .into_response(),
+        _ => {
+            tracing::warn!(
+                "unauthorized request from {:?}",
+                req.headers()
+                    .get("origin")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("unknown")
+            );
+            (
+                StatusCode::UNAUTHORIZED,
+                [("www-authenticate", "Bearer")],
+                "unauthorized",
+            )
+                .into_response()
+        }
     }
+}
+
+/// Returns true if the origin looks like a browser extension.
+fn is_extension_origin(origin: &str) -> bool {
+    origin.starts_with("chrome-extension://")
+        || origin.starts_with("moz-extension://")
+        || origin.starts_with("safari-web-extension://")
+        || origin.starts_with("extension://")
 }
 
 /// Compare two strings in constant time to prevent timing attacks.

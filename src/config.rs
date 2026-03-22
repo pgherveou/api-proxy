@@ -3,7 +3,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_PORT: u16 = 19280;
-const DEFAULT_CORS_ORIGIN: &str = "*";
+const DEFAULT_CORS_ORIGIN: &str = "";
 const DEFAULT_CLAUDE_POOL_SIZE: usize = 2;
 const DEFAULT_CONFIG: &str = "~/.config/api-proxy.toml";
 
