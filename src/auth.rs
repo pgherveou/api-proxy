@@ -10,10 +10,10 @@ pub async fn require_auth(
     req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    if state.block_extension_origins {
+    if let Some(re) = &state.blocked_origin_pattern {
         if let Some(origin) = req.headers().get("origin").and_then(|v| v.to_str().ok()) {
-            if is_extension_origin(origin) {
-                tracing::warn!("rejected auth from extension origin: {origin}");
+            if re.is_match(origin) {
+                tracing::warn!("rejected request from blocked origin: {origin}");
                 return (StatusCode::FORBIDDEN, "forbidden").into_response();
             }
         }
@@ -48,14 +48,6 @@ pub async fn require_auth(
                 .into_response()
         }
     }
-}
-
-/// Returns true if the origin looks like a browser extension.
-pub(crate) fn is_extension_origin(origin: &str) -> bool {
-    origin.starts_with("chrome-extension://")
-        || origin.starts_with("moz-extension://")
-        || origin.starts_with("safari-web-extension://")
-        || origin.starts_with("extension://")
 }
 
 /// Compare two strings in constant time to prevent timing attacks.

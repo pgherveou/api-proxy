@@ -82,3 +82,12 @@ case "$OS" in
         exit 0
         ;;
 esac
+
+echo ""
+echo "Security configuration (defaults shown):"
+echo "  CORS origin (localhost + *.github.io):                      $BIN_NAME set-cors-origin <origin|*>"
+echo "  Blocked origin pattern (extension origins by default):      $BIN_NAME set-blocked-origin-pattern <regex>"
+echo "  Disable origin blocking:                                     $BIN_NAME set-blocked-origin-pattern \"\""
+echo ""
+echo "View current config:  $BIN_NAME show-config"
+echo "Get auth token:       $BIN_NAME get-token"

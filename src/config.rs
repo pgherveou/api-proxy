@@ -18,9 +18,9 @@ pub struct Settings {
     /// Number of pre-warmed Claude CLI processes per model
     #[arg(long)]
     pub claude_pool_size: Option<usize>,
-    /// Block browser extension origins (chrome-extension://, moz-extension://, etc.)
+    /// Regex pattern for origins to block (empty = no blocking)
     #[arg(long)]
-    pub block_extension_origins: Option<bool>,
+    pub blocked_origin_pattern: Option<String>,
     /// Auth token (auto-generated if missing, read from config file only)
     #[serde(default)]
     #[arg(skip)]
@@ -33,6 +33,18 @@ pub enum Command {
     GetToken,
     /// Regenerate the auth token and save to config
     RegenerateToken,
+    /// Show current configuration
+    ShowConfig,
+    /// Set the allowed CORS origin ("*" for any, "" for localhost+github.io only)
+    SetCorsOrigin {
+        /// Origin value, e.g. "https://example.com" or "*"
+        origin: String,
+    },
+    /// Set a regex pattern for origins to block (empty string to disable blocking)
+    SetBlockedOriginPattern {
+        /// Regex pattern, e.g. "^chrome-extension://" or "" to disable
+        pattern: String,
+    },
 }
 
 #[derive(Parser)]
@@ -65,8 +77,8 @@ impl Config {
         if config.settings.claude_pool_size.is_none() {
             config.settings.claude_pool_size = file.claude_pool_size;
         }
-        if config.settings.block_extension_origins.is_none() {
-            config.settings.block_extension_origins = file.block_extension_origins;
+        if config.settings.blocked_origin_pattern.is_none() {
+            config.settings.blocked_origin_pattern = file.blocked_origin_pattern;
         }
         if config.settings.token.is_none() {
             config.settings.token = file.token;
@@ -91,6 +103,31 @@ impl Config {
         save_config(&self.config_path(), &self.settings);
     }
 
+    pub fn set_cors_origin(&mut self, origin: String) {
+        self.settings.cors_origin = Some(origin);
+        save_config(&self.config_path(), &self.settings);
+    }
+
+    pub fn set_blocked_origin_pattern(&mut self, pattern: String) {
+        self.settings.blocked_origin_pattern = Some(pattern);
+        save_config(&self.config_path(), &self.settings);
+    }
+
+    pub fn show(&self) {
+        println!("Config file:              {}", self.config_path());
+        println!("Port:                     {}", self.port());
+        let cors = match self.cors_origin() {
+            "*" => "any (*)".to_string(),
+            "" => "localhost + *.github.io (default)".to_string(),
+            v => v.to_string(),
+        };
+        println!("CORS origin:              {cors}");
+        println!(
+            "Blocked origin pattern:   {}",
+            self.blocked_origin_pattern().unwrap_or("(none)")
+        );
+    }
+
     pub fn port(&self) -> u16 {
         self.settings.port.unwrap_or(DEFAULT_PORT)
     }
@@ -108,8 +145,14 @@ impl Config {
             .unwrap_or(DEFAULT_CLAUDE_POOL_SIZE)
     }
 
-    pub fn block_extension_origins(&self) -> bool {
-        self.settings.block_extension_origins.unwrap_or(true)
+    pub fn blocked_origin_pattern(&self) -> Option<&str> {
+        match self.settings.blocked_origin_pattern.as_deref() {
+            // not set → use default extension pattern
+            None => Some("^(chrome-extension|moz-extension|safari-web-extension|extension)://"),
+            // explicitly set to empty → no blocking
+            Some("") => None,
+            Some(p) => Some(p),
+        }
     }
 
     pub fn token(&self) -> &str {
