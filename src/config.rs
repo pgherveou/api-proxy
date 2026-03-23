@@ -47,6 +47,8 @@ pub enum Command {
         /// Regex pattern, e.g. "^chrome-extension://" or "" to disable
         pattern: String,
     },
+    /// Print connection info as JSON (pipe to xclip/pbcopy to share with apps)
+    ConnectInfo,
 }
 
 #[derive(Parser)]

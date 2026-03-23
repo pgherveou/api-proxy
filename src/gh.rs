@@ -1,6 +1,6 @@
 use axum::body::Bytes;
 use axum::extract::{Request, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use tokio::process::Command;
 
@@ -49,7 +49,7 @@ pub async fn handler(State(state): State<AppState>, req: Request) -> Response {
     match result {
         Ok((status, stdout, stderr)) => {
             if status.success() {
-                (StatusCode::OK, stdout).into_response()
+                (StatusCode::OK, [(header::CONTENT_TYPE, "application/json")], stdout).into_response()
             } else {
                 tracing::warn!("gh api failed: {}", String::from_utf8_lossy(&stderr));
                 (StatusCode::BAD_GATEWAY, "gh api request failed").into_response()

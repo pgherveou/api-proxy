@@ -34,6 +34,14 @@ async fn main() {
             println!("Saved. Restart the service for changes to take effect.");
             return;
         }
+        Some(config::Command::ConnectInfo) => {
+            println!(
+                "{{\"url\":\"http://localhost:{}\",\"token\":\"{}\"}}",
+                config.port(),
+                config.token()
+            );
+            return;
+        }
         None => {}
     }
 

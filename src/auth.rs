@@ -32,12 +32,16 @@ pub async fn require_auth(
             next.run(req).await
         }
         _ => {
+            let origin = req.headers().get("origin").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
+            let has_auth = auth.is_some();
+            let token_len = auth.and_then(|v| v.strip_prefix("Bearer ")).map(|t| t.len());
+            let expected_len = state.token.len();
             tracing::warn!(
-                "unauthorized request from {:?}",
-                req.headers()
-                    .get("origin")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("unknown")
+                origin,
+                has_auth,
+                ?token_len,
+                expected_len,
+                "unauthorized request"
             );
             (
                 StatusCode::UNAUTHORIZED,
