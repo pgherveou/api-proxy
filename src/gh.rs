@@ -46,10 +46,12 @@ pub async fn handler(State(state): State<AppState>, req: Request) -> Response {
 
     let result = spawn_with_stdin(&mut cmd, if has_body { Some(&body) } else { None }).await;
 
+    let content_type = accept.as_deref().unwrap_or("application/json");
+
     match result {
         Ok((status, stdout, stderr)) => {
             if status.success() {
-                (StatusCode::OK, [(header::CONTENT_TYPE, "application/json")], stdout).into_response()
+                (StatusCode::OK, [(header::CONTENT_TYPE, content_type)], stdout).into_response()
             } else {
                 tracing::warn!("gh api failed: {}", String::from_utf8_lossy(&stderr));
                 (StatusCode::BAD_GATEWAY, "gh api request failed").into_response()
