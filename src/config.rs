@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 const DEFAULT_PORT: u16 = 19280;
 const DEFAULT_CORS_ORIGIN: &str = "";
 const DEFAULT_CLAUDE_POOL_SIZE: usize = 2;
+const DEFAULT_BLOCKED_ORIGIN_PATTERN: &str =
+    "^(chrome-extension|moz-extension|safari-web-extension|extension)://";
 const DEFAULT_CONFIG: &str = "~/.config/api-proxy.toml";
 
 #[derive(Args, Deserialize, Serialize, Default, Clone)]
@@ -85,12 +87,25 @@ impl Config {
         }
 
         if config.settings.token.is_none() {
-            let token = generate_token();
-            config.settings.token = Some(token);
+            config.settings.token = Some(generate_token());
+            config.fill_defaults();
             save_config(&path, &config.settings);
         }
 
         config
+    }
+
+    fn fill_defaults(&mut self) {
+        self.settings.port.get_or_insert(DEFAULT_PORT);
+        self.settings
+            .cors_origin
+            .get_or_insert_with(|| DEFAULT_CORS_ORIGIN.to_string());
+        self.settings
+            .claude_pool_size
+            .get_or_insert(DEFAULT_CLAUDE_POOL_SIZE);
+        self.settings
+            .blocked_origin_pattern
+            .get_or_insert_with(|| DEFAULT_BLOCKED_ORIGIN_PATTERN.to_string());
     }
 
     pub fn config_path(&self) -> String {
@@ -148,7 +163,7 @@ impl Config {
     pub fn blocked_origin_pattern(&self) -> Option<&str> {
         match self.settings.blocked_origin_pattern.as_deref() {
             // not set → use default extension pattern
-            None => Some("^(chrome-extension|moz-extension|safari-web-extension|extension)://"),
+            None => Some(DEFAULT_BLOCKED_ORIGIN_PATTERN),
             // explicitly set to empty → no blocking
             Some("") => None,
             Some(p) => Some(p),
