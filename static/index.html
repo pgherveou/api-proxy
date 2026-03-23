@@ -54,17 +54,35 @@
 
   header h1 span { color: var(--green-bright); }
 
-  /* --- Status bar / Connection --- */
-  .conn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  /* --- Settings pane --- */
+  .settings {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 0.5rem 0.75rem;
+    padding: 0.75rem 0.85rem;
     margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
+
+  .settings-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .settings-hint {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+
+  .settings-hint:hover { color: var(--text); }
 
   .dot {
     width: 8px; height: 8px;
@@ -79,20 +97,22 @@
     box-shadow: 0 0 6px var(--green-bright);
   }
 
-  .conn input {
+  .settings input {
     flex: 1;
-    background: transparent;
-    border: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
     color: var(--text);
     font-family: var(--mono);
     font-size: 0.8rem;
+    padding: 0.4rem 0.6rem;
     outline: none;
     min-width: 0;
+    transition: border-color 0.15s;
   }
 
-  .conn input::placeholder { color: var(--text-dim); }
-
-  .conn-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+  .settings input:focus { border-color: var(--border-focus); }
+  .settings input::placeholder { color: var(--text-dim); }
 
   /* --- Buttons --- */
   button {
@@ -249,15 +269,14 @@
   <h1><span>/</span>api-proxy</h1>
 </header>
 
-<div class="conn">
-  <div class="dot" id="dot"></div>
-  <label for="token-input" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6;">Bearer Token</label>
-  <input type="password" id="token-input" spellcheck="false" autocomplete="off">
-  <div class="conn-actions">
-    <button id="hint-btn" onclick="copyHint(this)" style="display:none; font-family: var(--mono); font-size: 0.7rem;"></button>
-    <button class="primary" onclick="verifyToken()">Connect</button>
+<div class="settings">
+  <div class="settings-row">
+    <div class="dot" id="dot"></div>
+    <input type="text" id="connect-input" spellcheck="false" autocomplete="off">
+    <button class="primary" onclick="connect()">Connect</button>
     <button onclick="disconnect()">Clear</button>
   </div>
+  <span class="settings-hint" id="hint" onclick="copyHint(this)"></span>
 </div>
 
 <div class="panels">
@@ -298,65 +317,95 @@
 </div>
 
 <script>
-const BASE = location.origin;
-const tokenInput = document.getElementById('token-input');
+const connectInput = document.getElementById('connect-input');
 const dot = document.getElementById('dot');
+const hint = document.getElementById('hint');
+
+let connInfo = { url: location.origin, token: '' };
 
 const isMac = navigator.platform.toUpperCase().includes('MAC');
-const copyCmd = isMac ? 'api-proxy get-token | pbcopy' : 'api-proxy get-token | xclip -sel clip';
-tokenInput.placeholder = 'paste token';
-const hintBtn = document.getElementById('hint-btn');
-hintBtn.textContent = copyCmd;
+const copyCmd = isMac
+  ? 'api-proxy connect-info | pbcopy'
+  : 'api-proxy connect-info | xclip -sel clip';
+connectInput.placeholder = 'paste connect-info JSON';
 
 function updateHint() {
-  hintBtn.style.display = getToken() ? 'none' : '';
+  hint.textContent = connInfo.token ? '' : copyCmd;
+  hint.style.display = connInfo.token ? 'none' : '';
 }
 
-function copyHint(btn) {
+function copyHint(el) {
   navigator.clipboard.writeText(copyCmd);
-  btn.textContent = 'copied!';
-  setTimeout(() => { btn.textContent = copyCmd; }, 1500);
+  el.textContent = 'copied!';
+  setTimeout(() => { el.textContent = copyCmd; }, 1500);
 }
 
-// Load token from localStorage
-(function init() {
-  const saved = localStorage.getItem('api-proxy-token');
-  if (saved) {
-    tokenInput.value = saved;
-    verifyToken();
-  }
-  updateHint();
-})();
-
-tokenInput.addEventListener('input', updateHint);
-
-function getToken() { return tokenInput.value.trim(); }
-
-function headers() {
-  const h = { 'Content-Type': 'application/json' };
-  const t = getToken();
-  if (t) h['Authorization'] = 'Bearer ' + t;
-  return h;
-}
-
-async function verifyToken() {
-  const t = getToken();
-  if (!t) return;
-  localStorage.setItem('api-proxy-token', t);
+function parseConnectInfo(raw) {
   try {
-    const r = await fetch(BASE + '/gh/user', { headers: headers() });
+    const obj = JSON.parse(raw.trim());
+    if (obj.url && obj.token) return obj;
+  } catch {}
+  return null;
+}
+
+async function connect() {
+  const raw = connectInput.value.trim();
+  if (!raw) return;
+  const info = parseConnectInfo(raw);
+  if (!info) {
+    connectInput.value = '';
+    connectInput.placeholder = 'invalid JSON, expected {"url":"...","token":"..."}';
+    return;
+  }
+  connInfo = info;
+  localStorage.setItem('api-proxy-conn', JSON.stringify(connInfo));
+  connectInput.value = info.url;
+  connectInput.readOnly = true;
+  await verify();
+}
+
+async function verify() {
+  if (!connInfo.token) return;
+  try {
+    const r = await fetch(connInfo.url + '/gh/user', { headers: headers() });
     dot.classList.toggle('on', r.ok);
   } catch {
     dot.classList.remove('on');
   }
+  updateHint();
 }
 
 function disconnect() {
-  localStorage.removeItem('api-proxy-token');
-  tokenInput.value = '';
+  localStorage.removeItem('api-proxy-conn');
+  connInfo = { url: location.origin, token: '' };
+  connectInput.value = '';
+  connectInput.readOnly = false;
+  connectInput.placeholder = 'paste connect-info JSON';
   dot.classList.remove('on');
   updateHint();
 }
+
+function headers() {
+  const h = { 'Content-Type': 'application/json' };
+  if (connInfo.token) h['Authorization'] = 'Bearer ' + connInfo.token;
+  return h;
+}
+
+// Restore from localStorage
+(function init() {
+  const saved = localStorage.getItem('api-proxy-conn');
+  if (saved) {
+    const info = parseConnectInfo(saved);
+    if (info) {
+      connInfo = info;
+      connectInput.value = info.url;
+      connectInput.readOnly = true;
+      verify();
+      return;
+    }
+  }
+  updateHint();
+})();
 
 function toggleGhBody() {
   const m = document.getElementById('gh-method').value;
@@ -417,7 +466,7 @@ async function sendGh() {
         opts.body = body;
       }
     }
-    const r = await fetch(BASE + '/gh/' + path, opts);
+    const r = await fetch(connInfo.url + '/gh/' + path, opts);
     const text = await r.text();
     setOutput('gh-out', text, !r.ok);
   } catch (e) {
@@ -437,7 +486,7 @@ async function sendClaude() {
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     };
-    const r = await fetch(BASE + '/claude/v1/messages', {
+    const r = await fetch(connInfo.url + '/claude/v1/messages', {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(payload),
