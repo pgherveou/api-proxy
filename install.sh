@@ -73,10 +73,41 @@ EOF
     echo "View logs: tail -f ~/Library/Logs/$BIN_NAME.log"
 }
 
+configure_security() {
+    echo ""
+    echo "=== Security Configuration ==="
+
+    # CORS origin
+    echo ""
+    echo "Allowed CORS origins (default: localhost + *.github.io)."
+    echo "Enter a specific origin (e.g. https://example.com), * for any, or press Enter to keep default."
+    read -r -p "CORS origin: " cors_input
+    if [[ -n "$cors_input" ]]; then
+        "$BIN_NAME" set-cors-origin "$cors_input"
+        echo "  Set to: $cors_input"
+    else
+        echo "  Keeping default (localhost + *.github.io)"
+    fi
+
+    # Blocked origin pattern
+    echo ""
+    echo "Blocked origin pattern (default: blocks browser extension origins)."
+    echo "Enter a regex to block, leave empty to disable blocking, or press Enter to keep default."
+    read -r -p "Blocked origin pattern: " block_input
+    if [[ -n "$block_input" ]]; then
+        "$BIN_NAME" set-blocked-origin "$block_input"
+        echo "  Set to: $block_input"
+    else
+        echo "  Keeping default (blocks chrome-extension://, moz-extension://, etc.)"
+    fi
+}
+
 # Build and install binary
 echo "Building $BIN_NAME (release)..."
 cargo install --path . --force
 echo "Installed to $(which $BIN_NAME)"
+
+configure_security
 
 # Install and start service
 OS="$(uname -s)"
@@ -92,3 +123,7 @@ case "$OS" in
         exit 0
         ;;
 esac
+
+echo ""
+echo "View current config:  $BIN_NAME show-config"
+echo "Get auth token:       $BIN_NAME get-token"

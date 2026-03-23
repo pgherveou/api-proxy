@@ -1,10 +1,12 @@
 use axum::body::Bytes;
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use tokio::process::Command;
 
-pub async fn handler(req: Request) -> Response {
+use crate::AppState;
+
+pub async fn handler(State(state): State<AppState>, req: Request) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().strip_prefix("/gh/").unwrap_or("");
     let query = req.uri().query();
@@ -26,7 +28,7 @@ pub async fn handler(req: Request) -> Response {
 
     let has_body = !body.is_empty();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = Command::new(&state.gh_command);
     cmd.arg("api").arg(&api_path);
     cmd.arg("--method").arg(method.as_str());
 

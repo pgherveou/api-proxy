@@ -10,6 +10,14 @@ pub async fn require_auth(
     req: axum::extract::Request,
     next: Next,
 ) -> Response {
+    if let Some(re) = &state.blocked_origin_pattern
+        && let Some(origin) = req.headers().get("origin").and_then(|v| v.to_str().ok())
+        && re.is_match(origin)
+    {
+        tracing::warn!("rejected request from blocked origin: {origin}");
+        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+    }
+
     let auth = req
         .headers()
         .get("authorization")
@@ -23,12 +31,21 @@ pub async fn require_auth(
         {
             next.run(req).await
         }
-        _ => (
-            StatusCode::UNAUTHORIZED,
-            [("www-authenticate", "Bearer")],
-            "unauthorized",
-        )
-            .into_response(),
+        _ => {
+            tracing::warn!(
+                "unauthorized request from {:?}",
+                req.headers()
+                    .get("origin")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("unknown")
+            );
+            (
+                StatusCode::UNAUTHORIZED,
+                [("www-authenticate", "Bearer")],
+                "unauthorized",
+            )
+                .into_response()
+        }
     }
 }
 
