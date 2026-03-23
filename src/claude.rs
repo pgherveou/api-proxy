@@ -71,8 +71,8 @@ pub struct ClaudeProcess {
 }
 
 impl ClaudeProcess {
-    fn spawn(extra_args: &[String]) -> std::io::Result<Self> {
-        let mut cmd = Command::new("claude");
+    fn spawn(command: &str, extra_args: &[String]) -> std::io::Result<Self> {
+        let mut cmd = Command::new(command);
         cmd.args([
             "--print",
             "--verbose",
@@ -134,10 +134,10 @@ impl ClaudeProcess {
             if n == 0 {
                 return Err("claude process exited".into());
             }
-            if let Ok(msg) = serde_json::from_str::<StreamMessage>(buf) {
-                if !matches!(msg, StreamMessage::Other) {
-                    return Ok(msg);
-                }
+            if let Ok(msg) = serde_json::from_str::<StreamMessage>(buf)
+                && !matches!(msg, StreamMessage::Other)
+            {
+                return Ok(msg);
             }
         }
     }
@@ -210,10 +210,15 @@ struct ModelPool {
 pub struct ClaudePool {
     pools: Arc<HashMap<String, ModelPool>>,
     next_req_id: Arc<AtomicU64>,
+    command: Arc<String>,
 }
 
 impl ClaudePool {
     pub fn new(models: &[(&str, usize)]) -> Self {
+        Self::new_with_command(models, "claude".into())
+    }
+
+    pub fn new_with_command(models: &[(&str, usize)], command: String) -> Self {
         let mut pools = HashMap::new();
         for &(model, size) in models {
             let args = if model.is_empty() {
@@ -232,24 +237,27 @@ impl ClaudePool {
             );
         }
 
+        let command = Arc::new(command);
         let pool = ClaudePool {
             pools: Arc::new(pools),
             next_req_id: Arc::new(AtomicU64::new(1)),
+            command: command.clone(),
         };
 
         // Spawn a replenisher task per model
         for (model, _) in pool.pools.iter() {
             let pools = Arc::clone(&pool.pools);
             let model = model.clone();
+            let cmd = command.clone();
             tokio::spawn(async move {
                 let mp = pools.get(&model).unwrap();
-                fill_pool(&mp.warm, &mp.args, mp.target).await;
+                fill_pool(&cmd, &mp.warm, &mp.args, mp.target).await;
                 let label = if model.is_empty() { "default" } else { &model };
                 tracing::info!("claude pool ready: {label} ({} processes)", mp.target);
 
                 loop {
                     mp.replenish.notified().await;
-                    fill_pool(&mp.warm, &mp.args, mp.target).await;
+                    fill_pool(&cmd, &mp.warm, &mp.args, mp.target).await;
                 }
             });
         }
@@ -285,7 +293,8 @@ impl ClaudePool {
                 drop(warm);
                 mp.replenish.notify_one();
                 tracing::warn!(model = key, "claude pool exhausted, spawning on-demand");
-                let proc = ClaudeProcess::spawn(&mp.args).map_err(|e| e.to_string())?;
+                let proc =
+                    ClaudeProcess::spawn(&self.command, &mp.args).map_err(|e| e.to_string())?;
                 return Ok((proc, "on-demand"));
             }
         }
@@ -295,12 +304,17 @@ impl ClaudePool {
         if let Some(m) = model {
             args.extend(["--model".into(), m.into()]);
         }
-        let proc = ClaudeProcess::spawn(&args).map_err(|e| e.to_string())?;
+        let proc = ClaudeProcess::spawn(&self.command, &args).map_err(|e| e.to_string())?;
         Ok((proc, "custom-args"))
     }
 }
 
-async fn fill_pool(warm: &Mutex<Vec<ClaudeProcess>>, args: &[String], target: usize) {
+async fn fill_pool(
+    command: &str,
+    warm: &Mutex<Vec<ClaudeProcess>>,
+    args: &[String],
+    target: usize,
+) {
     let current = warm.lock().await.len();
     let needed = target.saturating_sub(current);
     if needed == 0 {
@@ -310,7 +324,8 @@ async fn fill_pool(warm: &Mutex<Vec<ClaudeProcess>>, args: &[String], target: us
     let handles: Vec<_> = (0..needed)
         .map(|_| {
             let args = args.to_vec();
-            tokio::spawn(async move { ClaudeProcess::spawn(&args) })
+            let cmd = command.to_string();
+            tokio::spawn(async move { ClaudeProcess::spawn(&cmd, &args) })
         })
         .collect();
 

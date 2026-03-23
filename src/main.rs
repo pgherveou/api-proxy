@@ -52,11 +52,11 @@ async fn main() {
             if cors_origin == "*" {
                 return true;
             }
-            if let Some(re) = &block_re {
-                if re.is_match(origin) {
-                    tracing::warn!("blocked request from origin: {origin}");
-                    return false;
-                }
+            if let Some(re) = &block_re
+                && re.is_match(origin)
+            {
+                tracing::warn!("blocked request from origin: {origin}");
+                return false;
             }
             if cors_origin.is_empty() {
                 return origin.starts_with("http://localhost:")
@@ -78,6 +78,7 @@ async fn main() {
         ]),
         token,
         blocked_origin_pattern,
+        gh_command: "gh".into(),
     };
 
     let app = build_app(state, cors);

@@ -10,13 +10,12 @@ pub async fn require_auth(
     req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    if let Some(re) = &state.blocked_origin_pattern {
-        if let Some(origin) = req.headers().get("origin").and_then(|v| v.to_str().ok()) {
-            if re.is_match(origin) {
-                tracing::warn!("rejected request from blocked origin: {origin}");
-                return (StatusCode::FORBIDDEN, "forbidden").into_response();
-            }
-        }
+    if let Some(re) = &state.blocked_origin_pattern
+        && let Some(origin) = req.headers().get("origin").and_then(|v| v.to_str().ok())
+        && re.is_match(origin)
+    {
+        tracing::warn!("rejected request from blocked origin: {origin}");
+        return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
 
     let auth = req

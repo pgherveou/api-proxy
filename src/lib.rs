@@ -14,6 +14,8 @@ pub struct AppState {
     pub token: String,
     /// Compiled regex for origins to block; None means no blocking.
     pub blocked_origin_pattern: Option<regex::Regex>,
+    /// Command to run for `gh` CLI (default: "gh").
+    pub gh_command: String,
 }
 
 impl axum::extract::FromRef<AppState> for claude::ClaudePool {
