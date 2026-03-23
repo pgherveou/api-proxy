@@ -79,14 +79,15 @@ configure_security() {
 
     # CORS origin
     echo ""
-    echo "Allowed CORS origins (default: localhost + *.github.io)."
-    echo "Enter a specific origin (e.g. https://example.com), * for any, or press Enter to keep default."
+    echo "Allowed CORS origins (default: localhost, 127.0.0.1, *.github.io)."
+    echo "Comma-separated patterns: hostname, *.suffix, https://exact, or * for any."
+    echo "Press Enter to keep default."
     read -r -p "CORS origin: " cors_input
     if [[ -n "$cors_input" ]]; then
         "$BIN_NAME" set-cors-origin "$cors_input"
         echo "  Set to: $cors_input"
     else
-        echo "  Keeping default (localhost + *.github.io)"
+        echo "  Keeping default (localhost, 127.0.0.1, *.github.io)"
     fi
 
     # Blocked origin pattern
@@ -108,6 +109,10 @@ cargo install --path . --force
 echo "Installed to $(which $BIN_NAME)"
 
 configure_security
+
+# Ensure config file exists with defaults before starting the service
+"$BIN_NAME" show-config
+echo ""
 
 # Install and start service
 OS="$(uname -s)"

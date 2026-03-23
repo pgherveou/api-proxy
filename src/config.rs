@@ -3,7 +3,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_PORT: u16 = 19280;
-const DEFAULT_CORS_ORIGIN: &str = "";
+use api_proxy::DEFAULT_CORS_ORIGIN;
 const DEFAULT_CLAUDE_POOL_SIZE: usize = 2;
 const DEFAULT_BLOCKED_ORIGIN_PATTERN: &str =
     "^(chrome-extension|moz-extension|safari-web-extension|extension)://";
@@ -37,9 +37,9 @@ pub enum Command {
     RegenerateToken,
     /// Show current configuration
     ShowConfig,
-    /// Set the allowed CORS origin ("*" for any, "" for localhost+github.io only)
+    /// Set allowed CORS origins (comma-separated, "*" for any, "*.x" for suffix match)
     SetCorsOrigin {
-        /// Origin value, e.g. "https://example.com" or "*"
+        /// e.g. "localhost, *.github.io" or "*"
         origin: String,
     },
     /// Set a regex pattern for origins to block (empty string to disable blocking)
@@ -76,6 +76,10 @@ impl Config {
         if config.settings.cors_origin.is_none() {
             config.settings.cors_origin = file.cors_origin;
         }
+        // Migrate old empty-string default
+        if config.settings.cors_origin.as_deref() == Some("") {
+            config.settings.cors_origin = None;
+        }
         if config.settings.claude_pool_size.is_none() {
             config.settings.claude_pool_size = file.claude_pool_size;
         }
@@ -86,26 +90,33 @@ impl Config {
             config.settings.token = file.token;
         }
 
-        if config.settings.token.is_none() {
+        let token_generated = config.settings.token.is_none();
+        if token_generated {
             config.settings.token = Some(generate_token());
-            config.fill_defaults();
+        }
+
+        if config.fill_defaults() || token_generated {
             save_config(&path, &config.settings);
         }
 
         config
     }
 
-    fn fill_defaults(&mut self) {
-        self.settings.port.get_or_insert(DEFAULT_PORT);
-        self.settings
-            .cors_origin
+    /// Fill any missing settings with defaults. Returns true if anything changed.
+    fn fill_defaults(&mut self) -> bool {
+        let s = &mut self.settings;
+        let mut changed = false;
+        changed |= s.port.is_none();
+        changed |= s.cors_origin.is_none();
+        changed |= s.claude_pool_size.is_none();
+        changed |= s.blocked_origin_pattern.is_none();
+        s.port.get_or_insert(DEFAULT_PORT);
+        s.cors_origin
             .get_or_insert_with(|| DEFAULT_CORS_ORIGIN.to_string());
-        self.settings
-            .claude_pool_size
-            .get_or_insert(DEFAULT_CLAUDE_POOL_SIZE);
-        self.settings
-            .blocked_origin_pattern
+        s.claude_pool_size.get_or_insert(DEFAULT_CLAUDE_POOL_SIZE);
+        s.blocked_origin_pattern
             .get_or_insert_with(|| DEFAULT_BLOCKED_ORIGIN_PATTERN.to_string());
+        changed
     }
 
     pub fn config_path(&self) -> String {
@@ -131,12 +142,7 @@ impl Config {
     pub fn show(&self) {
         println!("Config file:              {}", self.config_path());
         println!("Port:                     {}", self.port());
-        let cors = match self.cors_origin() {
-            "*" => "any (*)".to_string(),
-            "" => "localhost + *.github.io (default)".to_string(),
-            v => v.to_string(),
-        };
-        println!("CORS origin:              {cors}");
+        println!("CORS origin:              {}", self.cors_origin());
         println!(
             "Blocked origin pattern:   {}",
             self.blocked_origin_pattern().unwrap_or("(none)")

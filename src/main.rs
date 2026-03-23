@@ -1,4 +1,4 @@
-use api_proxy::{AppState, build_app};
+use api_proxy::{AppState, build_app, cors_origin_matches};
 use config::Config;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
@@ -44,26 +44,18 @@ async fn main() {
         .blocked_origin_pattern()
         .map(|p| regex::Regex::new(p).expect("invalid blocked_origin_pattern"));
 
-    let cors_origin = config.cors_origin().to_string();
+    let cors_patterns = config.cors_origin().to_string();
     let block_re = blocked_origin_pattern.clone();
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             let origin = origin.to_str().unwrap_or("");
-            if cors_origin == "*" {
-                return true;
-            }
             if let Some(re) = &block_re
                 && re.is_match(origin)
             {
                 tracing::warn!("blocked request from origin: {origin}");
                 return false;
             }
-            if cors_origin.is_empty() {
-                return origin.starts_with("http://localhost:")
-                    || origin.starts_with("http://127.0.0.1:")
-                    || origin.ends_with(".github.io");
-            }
-            origin == cors_origin
+            cors_origin_matches(origin, &cors_patterns)
         }))
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);

@@ -3,7 +3,7 @@ use serde_json::Value;
 use tower::ServiceExt;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
-use api_proxy::{AppState, build_app};
+use api_proxy::{AppState, DEFAULT_CORS_ORIGIN, build_app, cors_origin_matches};
 
 fn mock_path(name: &str) -> String {
     let manifest = env!("CARGO_MANIFEST_DIR");
@@ -20,25 +20,17 @@ fn make_app(cors_origin: &str, blocked_pattern: Option<&str>) -> axum::Router {
         gh_command: mock_path("mock_gh.sh"),
     };
 
-    let cors_origin_str = cors_origin.to_string();
+    let cors_patterns = cors_origin.to_string();
     let block_re = state.blocked_origin_pattern.clone();
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             let origin = origin.to_str().unwrap_or("");
-            if cors_origin_str == "*" {
-                return true;
+            if let Some(re) = &block_re
+                && re.is_match(origin)
+            {
+                return false;
             }
-            if let Some(re) = &block_re {
-                if re.is_match(origin) {
-                    return false;
-                }
-            }
-            if cors_origin_str.is_empty() {
-                return origin.starts_with("http://localhost:")
-                    || origin.starts_with("http://127.0.0.1:")
-                    || origin.ends_with(".github.io");
-            }
-            origin == cors_origin_str
+            cors_origin_matches(origin, &cors_patterns)
         }))
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);
@@ -82,7 +74,7 @@ fn acao(resp: &http::Response<axum::body::Body>) -> Option<&str> {
 
 #[tokio::test]
 async fn health_returns_ok_without_auth() {
-    let app = make_app("", None);
+    let app = make_app(DEFAULT_CORS_ORIGIN, None);
     let resp = app
         .oneshot(
             Request::get("/health")
@@ -97,7 +89,7 @@ async fn health_returns_ok_without_auth() {
 
 #[tokio::test]
 async fn index_returns_html_without_auth() {
-    let app = make_app("", None);
+    let app = make_app(DEFAULT_CORS_ORIGIN, None);
     let resp = app
         .oneshot(Request::get("/").body(axum::body::Body::empty()).unwrap())
         .await
@@ -133,7 +125,7 @@ async fn auth_on_protected_routes() {
             name: "claude rejects missing token",
             method: "POST",
             uri: "/claude/v1/messages",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             origin: None,
             auth: None,
@@ -144,7 +136,7 @@ async fn auth_on_protected_routes() {
             name: "claude rejects wrong token",
             method: "POST",
             uri: "/claude/v1/messages",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             origin: None,
             auth: Some("Bearer wrong-token"),
@@ -155,7 +147,7 @@ async fn auth_on_protected_routes() {
             name: "gh rejects missing token",
             method: "GET",
             uri: "/gh/user",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             origin: None,
             auth: None,
@@ -188,7 +180,7 @@ async fn auth_on_protected_routes() {
             name: "localhost origin with valid token passes auth",
             method: "GET",
             uri: "/gh/user",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: Some("^chrome-extension://"),
             origin: Some("http://localhost:3000"),
             auth: Some("Bearer test-token"),
@@ -244,38 +236,38 @@ async fn cors_predicate() {
     }
 
     let cases = [
-        // Default CORS (empty = localhost + *.github.io)
+        // Default CORS
         Case {
             name: "default allows localhost",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             origin: "http://localhost:3000",
             expect_acao: Some("http://localhost:3000"),
         },
         Case {
             name: "default allows 127.0.0.1",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             origin: "http://127.0.0.1:8080",
             expect_acao: Some("http://127.0.0.1:8080"),
         },
         Case {
             name: "default allows github.io",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             origin: "https://pgherveou.github.io",
             expect_acao: Some("https://pgherveou.github.io"),
         },
         Case {
             name: "default blocks arbitrary origin",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             origin: "https://evil.com",
             expect_acao: None,
         },
         Case {
             name: "default blocks extension origin",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: Some(
                 "^(chrome-extension|moz-extension|safari-web-extension|extension)://",
             ),
@@ -337,7 +329,7 @@ async fn cors_on_protected_routes() {
     let cases = [
         Case {
             name: "default allows localhost on claude",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             method: "POST",
             uri: "/claude/v1/messages",
@@ -346,7 +338,7 @@ async fn cors_on_protected_routes() {
         },
         Case {
             name: "default no ACAO for arbitrary origin on gh",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             method: "GET",
             uri: "/gh/user",
@@ -382,7 +374,7 @@ async fn cors_on_protected_routes() {
         },
         Case {
             name: "github.io allowed on gh",
-            cors_origin: "",
+            cors_origin: DEFAULT_CORS_ORIGIN,
             blocked_pattern: None,
             method: "GET",
             uri: "/gh/user",
@@ -417,7 +409,7 @@ async fn cors_on_protected_routes() {
 
 #[tokio::test]
 async fn cors_preflight_on_claude() {
-    let app = make_app("", None);
+    let app = make_app(DEFAULT_CORS_ORIGIN, None);
     let resp = app
         .oneshot(
             Request::builder()
@@ -444,7 +436,7 @@ async fn cors_preflight_on_claude() {
 
 #[tokio::test]
 async fn claude_buffered_response_shape() {
-    let app = make_app("", None);
+    let app = make_app(DEFAULT_CORS_ORIGIN, None);
     let resp = app
         .oneshot(
             Request::post("/claude/v1/messages")
@@ -500,7 +492,7 @@ async fn claude_model_handling() {
     ];
 
     for case in cases {
-        let app = make_app("", None);
+        let app = make_app(DEFAULT_CORS_ORIGIN, None);
         let resp = app
             .oneshot(
                 Request::post("/claude/v1/messages")
@@ -533,7 +525,7 @@ async fn claude_model_handling() {
 
 #[tokio::test]
 async fn claude_system_prompt_forwarded() {
-    let app = make_app("", None);
+    let app = make_app(DEFAULT_CORS_ORIGIN, None);
     let resp = app
         .oneshot(
             Request::post("/claude/v1/messages")
@@ -568,7 +560,7 @@ async fn claude_system_prompt_forwarded() {
 
 #[tokio::test]
 async fn claude_streaming_returns_sse_events() {
-    let app = make_app("", None);
+    let app = make_app(DEFAULT_CORS_ORIGIN, None);
     let resp = app
         .oneshot(
             Request::post("/claude/v1/messages")
@@ -658,7 +650,7 @@ async fn gh_proxy() {
     ];
 
     for case in cases {
-        let app = make_app("", None);
+        let app = make_app(DEFAULT_CORS_ORIGIN, None);
         let mut req = Request::builder()
             .method(case.method)
             .uri(case.uri)
