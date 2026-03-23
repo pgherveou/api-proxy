@@ -24,7 +24,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build site
-        run: cp -r static _site
+        run: |
+          cp -r static _site
+          sed -i "s|const BASE = location.origin;|const BASE = 'http://localhost:19280';|" _site/index.html
 
       - uses: actions/upload-pages-artifact@v3
 
