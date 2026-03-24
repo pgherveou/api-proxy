@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, Notify};
 
-pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 
 // The verbose stream-json protocol emits three kinds of messages:
 // - stream_event: wraps raw API events (content_block_delta, message_stop, etc.)
